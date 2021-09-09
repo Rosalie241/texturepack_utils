@@ -1,3 +1,5 @@
+#include <cstdint>
+#include <cstdio>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -19,9 +21,9 @@ struct GHQTexInfo
 
 int main(int argc, char** argv)
 {
-    if (argc < 3)
+    if (argc < 2)
     {
-        printf("Usage: %s [HTC FILE] [HTS OUTPUT}\n", argv[0]);
+        printf("Usage: %s [HTC FILE]\n", argv[0]);
         return 1;
     }
 
@@ -29,7 +31,18 @@ int main(int argc, char** argv)
     char outFilename[200];
 
     strcpy(inFilename, argv[1]);
-    strcpy(outFilename, argv[2]);
+    strcpy(outFilename, inFilename);
+
+    char* inFileExtension = strstr(outFilename, ".");
+    if (inFileExtension == NULL)
+    {
+        fprintf(stderr, "no dot found in filename\n");
+        return 1;
+    }
+
+    strcpy(inFileExtension, ".hts");
+
+
 
     /* try to open provided filename */
     gzFile gzfp = gzopen(inFilename, "rb");
@@ -39,7 +52,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    FILE* outFile = fopen(outFilename, "w");
+    FILE* outFile = fopen(outFilename, "wb+");
     if (outFile == NULL)
     {
         perror("fopen");
@@ -47,7 +60,7 @@ int main(int argc, char** argv)
     }
 
     /* write header to outFile */
-    int outConfig = 1075970048, mapOffset = -1;
+    int32_t outConfig = 1075970048, mapOffset = -1;
     fwrite(&outConfig, 4, 1, outFile);
     fwrite(&mapOffset, 4, 1, outFile);
 
@@ -59,7 +72,7 @@ int main(int argc, char** argv)
     /* keep reading until the end */
     while (!gzeof(gzfp))
     {
-        int dataSize;
+        int32_t dataSize;
         uint64_t checksum;
         struct GHQTexInfo info;
 
@@ -108,8 +121,8 @@ int main(int argc, char** argv)
     printf("adding mapping to %s\n", outFilename);
 
 #define FWRITE(x) fwrite(&x, sizeof(x), 1, outFile)
-    long mappingOffset = ftell(outFile);
-    int mappingSize = (int)mapping.size();
+    int64_t mappingOffset = ftell(outFile);
+    int32_t mappingSize = (int32_t)mapping.size();
     FWRITE(mappingSize);
     for (auto item : mapping)
     {
