@@ -1,5 +1,3 @@
-#include <cstdint>
-#include <cstdio>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -7,6 +5,7 @@
 #include <utility>
 #include <zlib.h>
 #include <unordered_map>
+#include <ctype.h>
 
 struct GHQTexInfo
 {
@@ -33,15 +32,21 @@ int main(int argc, char** argv)
     strcpy(inFilename, argv[1]);
     strcpy(outFilename, inFilename);
 
-    char* inFileExtension = strstr(outFilename, ".");
-    if (inFileExtension == NULL)
+    /* make sure the end of inFileame 
+     *  contains .htc, if it does, 
+     *  overwrite it with .hts
+     */
+    char* inFileExtension = outFilename + strlen(outFilename) - 4;
+    /* tolower extension */
+    for (int i = 0; i < 4; i++) { inFileExtension[i] = tolower(inFileExtension[i]); }
+    if (strcmp(inFileExtension, ".htc") != 0)
     {
-        fprintf(stderr, "no dot found in filename\n");
+        fprintf(stderr, "file doesn't end with .htc!\n");
         return 1;
     }
 
+    /* overwrite .htc with .hts */
     strcpy(inFileExtension, ".hts");
-
 
 
     /* try to open provided filename */
