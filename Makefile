@@ -1,9 +1,13 @@
-CXX ?= g++
+CXX := g++
+CC 	:= gcc
 
-all: htc2uhts
+all: htc2uhts hts2png
 
-htc2uhts:
-	$(CXX) htc2uhts.cpp -o htc2uhts -lz $(CXXFLAGS)
+%: %.cpp
+	$(CXX) $< -o $@ -lz $(EXTRACFLAGS)
+
+%: %.c
+	$(CC) $< -o $@ -lpng $(EXTRACFLAGS)
 
 clean:
-	rm -f htc2uhts
+	rm -f htc2uhts hts2png

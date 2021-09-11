@@ -9,13 +9,13 @@
 
 struct GHQTexInfo
 {
-    unsigned char* data;
-    int width;
-    int height;
-    unsigned int format;
-    unsigned short texture_format;
-    unsigned short pixel_type;
-    unsigned char is_hires_tex;
+    uint8_t* data;
+    int32_t width;
+    int32_t height;
+    uint32_t format;
+    uint16_t texture_format;
+    uint16_t pixel_type;
+    uint8_t is_hires_tex;
 };
 
 int main(int argc, char** argv)
@@ -47,7 +47,6 @@ int main(int argc, char** argv)
 
     /* overwrite .htc with .hts */
     strcpy(inFileExtension, ".hts");
-
 
     /* try to open provided filename */
     gzFile gzfp = gzopen(inFilename, "rb");
