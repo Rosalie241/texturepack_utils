@@ -316,7 +316,7 @@ int main(int argc, char** argv)
                    "-> info.texture_format = %i\n"
                    "-> info.pixel_type = %i\n"
                    "-> info.is_hires_tex = %i\n", 
-                    i, mappingSize, filename,
+                    (i + 1), mappingSize, filename,
                     info.width,
                     info.height,
                     info.format,
