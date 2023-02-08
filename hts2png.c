@@ -334,7 +334,7 @@ int main(int argc, char** argv)
                    "-> info.pixel_type = %i\n"
                    "-> info.is_hires_tex = %i\n"
                    "-> info.n64_format_size = %i\n", 
-                    i, mappingSize, filename,
+                    (i + 1), mappingSize, filename,
                     info.width,
                     info.height,
                     info.format,
