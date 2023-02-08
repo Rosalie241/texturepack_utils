@@ -9,18 +9,38 @@
 #include <unistd.h>
 #include <libgen.h>
 
+#define UNDEFINED_1            0x08000000
+#define TXCACHE_FORMAT_VERSION UNDEFINED_1
+
+#define GZ_TEXCACHE         0x00400000
+#define GZ_HIRESTEXCACHE    0x00800000
+
+typedef struct
+{
+    union
+    {
+        uint16_t _formatsize;
+        struct
+        {
+            uint8_t _format;
+            uint8_t _size;
+        };
+    };
+} N64FormatSize;
+
 struct GHQTexInfo
 {
-    uint8_t* data;
-    int32_t width;
-    int32_t height;
-    uint32_t format;
-    uint16_t texture_format;
-    uint16_t pixel_type;
-    uint8_t is_hires_tex;
+    uint8_t*      data;
+    int32_t       width;
+    int32_t       height;
+    uint32_t      format;
+    uint16_t      texture_format;
+    uint16_t      pixel_type;
+    uint8_t       is_hires_tex;
+    N64FormatSize n64_format_size;
 };
 
-bool read_info(FILE* file, struct GHQTexInfo* info)
+bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info)
 {
     uint32_t dataSize = 0;
 #define FREAD(x) fread(&x, sizeof(x), 1, file)
@@ -30,6 +50,10 @@ bool read_info(FILE* file, struct GHQTexInfo* info)
     FREAD(info->texture_format);
     FREAD(info->pixel_type);
     FREAD(info->is_hires_tex);
+    if (!oldFormat)
+    {
+        FREAD(info->n64_format_size._formatsize);
+    }
     FREAD(dataSize);
 #undef FREAD
 
@@ -44,18 +68,34 @@ bool read_info(FILE* file, struct GHQTexInfo* info)
     return true;
 }
 
-void get_filename_from_info(uint64_t checksum, struct GHQTexInfo* info, char* ident, char* filename)
+void get_filename_from_info(uint64_t checksum, bool oldFormat, struct GHQTexInfo* info, char* ident, char* filename)
 {
-    uint32_t chksum = checksum & 0xffffffff;
-    uint32_t palchksum = checksum >> 32;
+    const uint32_t chksum    = checksum & 0xffffffff;
+    const uint32_t palchksum = checksum >> 32;
+    const uint32_t n64fmt    = info->n64_format_size._format;
+    const uint32_t n64fmt_sz = info->n64_format_size._size;
 
-    if (palchksum == 0)
+    if (oldFormat)
     {
-        sprintf(filename, "%s#%08X#%01X#%01X_all.png", ident, chksum, 3, 0);
+        if (palchksum == 0)
+        {
+            sprintf(filename, "%s#%08X#%01X#%01X_all.png", ident, chksum, 3, 0);
+        }
+        else
+        {
+            sprintf(filename, "%s#%08X#%01X#%01X#%08X_ciByRGBA.png", ident, chksum, 3, 0, palchksum);
+        }
     }
     else
     {
-        sprintf(filename, "%s#%08X#%01X#%01X#%08X_ciByRGBA.png", ident, chksum, 3, 0, palchksum);
+        if (n64fmt == 0x02)
+        {
+            sprintf(filename, "%s#%08X#%01X#%01X_all.png", ident, chksum, n64fmt, n64fmt_sz);
+        }
+        else
+        {
+            sprintf(filename, "%s#%08X#%01X#%01X#%08X_ciByRGBA.png", ident, chksum, n64fmt, n64fmt_sz, palchksum);
+        }
     }
 }
 
@@ -98,7 +138,7 @@ bool write_info_to_png(char* filename, struct GHQTexInfo* info)
         return false;
     }
 
-    png_byte bit_depth = 8;
+    png_byte bit_depth  = 8;
     png_byte color_type = PNG_COLOR_TYPE_RGBA;
     png_set_IHDR(png_ptr, info_ptr, info->width, info->height, 
         bit_depth, color_type, PNG_INTERLACE_NONE, 
@@ -114,10 +154,10 @@ bool write_info_to_png(char* filename, struct GHQTexInfo* info)
 
     int pixel_size = 4;
     int p = 0;
-    png_bytep * row_pointers = (png_bytep*)malloc(info->height * sizeof(png_bytep));
-    for (int y = 0; y <= info->height; y++)
+    png_bytep* row_pointers = malloc(info->height * sizeof(png_bytep));
+    for (int y = 0; y < info->height; y++)
     {
-        row_pointers[y] = (png_byte*)malloc(info->width * pixel_size);
+        row_pointers[y] = malloc(info->width * pixel_size);
         for (int x = 0; x < info->width; x++)
         {
             row_pointers[y][x * pixel_size + 0] = info->data[p++];
@@ -201,16 +241,33 @@ int main(int argc, char** argv)
 
 #define FREAD(x) fread(&x, sizeof(x), 1, file)
     /* read file header & mapping */
-    int32_t header = -1;
+    bool    oldFormat = false;
+    int32_t version   = -1;
+    int32_t header    = -1;
     int64_t mappingOffset = -1;
-    int32_t mappingSize = -1;
+    int32_t mappingSize   = -1;
 
-    FREAD(header);
+    /* determine HTS format */
+    FREAD(version);
+    if (version == TXCACHE_FORMAT_VERSION)
+    {
+        FREAD(header);
+        oldFormat = false;
+    }
+    else
+    {
+        header = version;
+        oldFormat = true;
+    }
+    
+    printf("oldFormat = %i\n", oldFormat);
+
     FREAD(mappingOffset);
 
     if (header != 1075970048)
     {
-        fprintf(stderr, "header != 1075970048");
+        fprintf(stderr, "expected header = 1075970048\n");
+        fprintf(stderr, "got header = %i\n", header);
         return 1;
     }
 
@@ -224,7 +281,7 @@ int main(int argc, char** argv)
         /* write each file to PNG */
         uint64_t checksum = 0, offset = 0;
         uint64_t currentOffset = 0;
-        struct GHQTexInfo info;
+        struct GHQTexInfo info = {0};
         char filename[PATH_MAX];
 
         FREAD(checksum);
@@ -236,20 +293,50 @@ int main(int argc, char** argv)
         /* seek to texture */
         fseek(file, offset, SEEK_SET);
 
-        if (!read_info(file, &info))
+        if (!read_info(file, oldFormat, &info))
         {
             printf("read_info failed!\n");
             continue;
         }
 
-        get_filename_from_info(checksum, &info, base_ident, filename);
+        get_filename_from_info(checksum, oldFormat, &info, base_ident, filename);
 
-        printf("-> [%i/%i] writing %s\n", i, mappingSize, filename);
-        printf("-> info.width = %i\n", info.width);
-        printf("-> info.height = %i\n", info.height);
-        printf("-> info.format = %u\n", info.format);
-        printf("-> info.texture_format = %i\n", info.texture_format);
-        printf("-> info.pixel_type = %i\n", info.pixel_type);
+        if (oldFormat)
+        {
+            printf("-> [%i/%i] writing %s\n"
+                   "-> info.width = %i\n"
+                   "-> info.height = %i\n"
+                   "-> info.format = %u\n"
+                   "-> info.texture_format = %i\n"
+                   "-> info.pixel_type = %i\n"
+                   "-> info.is_hires_tex = %i\n", 
+                    i, mappingSize, filename,
+                    info.width,
+                    info.height,
+                    info.format,
+                    info.texture_format,
+                    info.pixel_type,
+                    info.is_hires_tex);
+        }
+        else
+        {
+            printf("-> [%i/%i] writing %s\n"
+                   "-> info.width = %i\n"
+                   "-> info.height = %i\n"
+                   "-> info.format = %u\n"
+                   "-> info.texture_format = %i\n"
+                   "-> info.pixel_type = %i\n"
+                   "-> info.is_hires_tex = %i\n"
+                   "-> info.n64_format_size = %i\n", 
+                    i, mappingSize, filename,
+                    info.width,
+                    info.height,
+                    info.format,
+                    info.texture_format,
+                    info.pixel_type,
+                    info.is_hires_tex,
+                    info.n64_format_size._formatsize);
+        }
 
         if (!write_info_to_png(filename, &info))
         {
