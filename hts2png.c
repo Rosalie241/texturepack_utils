@@ -1,3 +1,12 @@
+/*
+ * texturepack_utils - https://github.com/Rosalie241/texturepack_utils
+ *  Copyright (C) 2023 Rosalie Wanders <rosalie@mailbox.org>
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 3.
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 #ifndef _WIN32
 #include <linux/limits.h>
 #endif /* _WIN32 */
@@ -10,12 +19,12 @@
 #include <string.h>
 #include <unistd.h>
 #include <libgen.h>
+#include <zlib.h>
 
 #define UNDEFINED_1            0x08000000
 #define TXCACHE_FORMAT_VERSION UNDEFINED_1
 
-#define GZ_TEXCACHE         0x00400000
-#define GZ_HIRESTEXCACHE    0x00800000
+#define GL_TEXFMT_GZ 0x80000000
 
 typedef struct
 {
@@ -66,6 +75,35 @@ bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info)
     }
 
     fread(info->data, dataSize, 1, file);
+
+    if (info->format & GL_TEXFMT_GZ)
+    {
+        void* dest     = NULL;
+        uLongf destLen = dataSize * 2;
+        int ret        = 0;
+        do
+        {
+            dest = malloc(destLen);
+            if (dest == NULL)
+            {
+                return false;
+            }
+
+            ret = uncompress(dest, &destLen, info->data, dataSize);
+            if (ret == Z_BUF_ERROR)
+            { /* increase buffer size as needed */
+                free(dest);
+                destLen = destLen + destLen;
+            }
+            else if (ret != Z_OK)
+            {
+                return false;
+            }
+        } while (ret == Z_BUF_ERROR);
+
+        free(info->data);
+        info->data = dest;
+    }
 
     return true;
 }
@@ -247,9 +285,10 @@ int main(int argc, char** argv)
 
 #define FREAD(x) fread(&x, sizeof(x), 1, file)
     /* read file header & mapping */
-    bool    oldFormat = false;
-    int32_t version   = -1;
-    int32_t header    = -1;
+    bool    compressed = false;
+    bool    oldFormat  = false;
+    int32_t version    = -1;
+    int32_t header     = -1;
     int64_t mappingOffset = -1;
     int32_t mappingSize   = -1;
 
@@ -270,9 +309,12 @@ int main(int argc, char** argv)
 
     FREAD(mappingOffset);
 
-    if (header != 1075970048)
+    if (/* uncompressed HTS */
+        header != 1075970048 &&
+        /* compressed HTS */
+        header != 1084358656)
     {
-        fprintf(stderr, "expected header = 1075970048\n");
+        fprintf(stderr, "expected header = 1075970048 or 1084358656\n");
         fprintf(stderr, "got header = %i\n", header);
         return 1;
     }
