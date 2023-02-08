@@ -1,4 +1,6 @@
+#ifndef _WIN32
 #include <linux/limits.h>
+#endif /* _WIN32 */
 #include <png.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -101,7 +103,7 @@ void get_filename_from_info(uint64_t checksum, bool oldFormat, struct GHQTexInfo
 
 bool write_info_to_png(char* filename, struct GHQTexInfo* info)
 {
-    FILE* file = fopen(filename, "w");
+    FILE* file = fopen(filename, "wb");
     if (file == NULL)
     {
         perror("fopen");
@@ -219,13 +221,17 @@ int main(int argc, char** argv)
     /* create directory for ident */
     struct stat st;
     if (stat(ident, &st) == -1 &&
+#ifdef _WIN32
+        mkdir(ident) == -1)
+#else
         mkdir(ident, 0700) == -1)
+#endif /* _WIN32 */
     {
         perror("mkdir");
         return 1;
     }
 
-    FILE* file = fopen(filename, "r");
+    FILE* file = fopen(filename, "rb");
     if (file == NULL)
     {
         perror("fopen");

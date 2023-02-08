@@ -7,7 +7,7 @@ all: htc2uhts hts2png
 	$(CXX) $< -o $@ -lz $(EXTRACFLAGS)
 
 %: %.c
-	$(CC) $< -o $@ -lpng $(EXTRACFLAGS)
+	$(CC) $< -o $@ -lpng -lz $(EXTRACFLAGS)
 
 clean:
 	rm -f htc2uhts hts2png
