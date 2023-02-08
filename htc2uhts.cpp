@@ -1,3 +1,12 @@
+/*
+ * texturepack_utils - https://github.com/Rosalie241/texturepack_utils
+ *  Copyright (C) 2023 Rosalie Wanders <rosalie@mailbox.org>
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 3.
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
