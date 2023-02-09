@@ -284,13 +284,21 @@ int main(int argc, char** argv)
     }
 
 #define FREAD(x) fread(&x, sizeof(x), 1, file)
+#ifdef _WIN32
+#define FSEEK(x, y, z) _fseeki64(x, y, z)
+#define FTELL(x) _ftelli64(x)
+#else
+#define FSEEK(x, y, z) fseek(x, y, z)
+#define FTELL(x) ftell(x)
+#endif
     /* read file header & mapping */
-    bool    compressed = false;
-    bool    oldFormat  = false;
-    int32_t version    = -1;
-    int32_t header     = -1;
+    bool    oldFormat = false;
+    int32_t version   = -1;
+    int32_t header    = -1;
     int64_t mappingOffset = -1;
     int32_t mappingSize   = -1;
+
+    FSEEK(file, 0L, SEEK_SET);
 
     /* determine HTS format */
     FREAD(version);
@@ -305,10 +313,6 @@ int main(int argc, char** argv)
         oldFormat = true;
     }
     
-    printf("oldFormat = %i\n", oldFormat);
-
-    FREAD(mappingOffset);
-
     if (/* uncompressed HTS */
         header != 1075970048 &&
         /* compressed HTS */
@@ -319,15 +323,18 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    FREAD(mappingOffset);
+
     /* seek to mapping */
-    fseek(file, mappingOffset, SEEK_SET);
+    FSEEK(file, mappingOffset, SEEK_SET);
 
     FREAD(mappingSize);
 
     for (int32_t i = 0; i < mappingSize; i++)
     {
         /* write each file to PNG */
-        uint64_t checksum = 0, offset = 0;
+        uint64_t checksum = 0;
+        int64_t  offset = 0;
         uint64_t currentOffset = 0;
         struct GHQTexInfo info = {0};
         char filename[PATH_MAX];
@@ -336,10 +343,10 @@ int main(int argc, char** argv)
         FREAD(offset);
 
         /* store current offset */
-        currentOffset = ftell(file);
+        currentOffset = FTELL(file);
 
         /* seek to texture */
-        fseek(file, offset, SEEK_SET);
+        FSEEK(file, offset, SEEK_SET);
 
         if (!read_info(file, oldFormat, &info))
         {
@@ -396,9 +403,10 @@ int main(int argc, char** argv)
         free(info.data);
 
         /* restore offset */
-        fseek(file, currentOffset, SEEK_SET);
+        FSEEK(file, currentOffset, SEEK_SET);
     }
 
+#undef FSEEK
 #undef FREAD
     
     fclose(file);
