@@ -298,8 +298,6 @@ int main(int argc, char** argv)
     int64_t mappingOffset = -1;
     int32_t mappingSize   = -1;
 
-    FSEEK(file, 0L, SEEK_SET);
-
     /* determine HTS format */
     FREAD(version);
     if (version == TXCACHE_FORMAT_VERSION)
