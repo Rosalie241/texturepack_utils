@@ -320,14 +320,6 @@ int main(int argc, char** argv)
     strcpy(filename2, argv[2]);
     strcpy(outputFilename, argv[3]);
 
-    /* make sure end of filename contains _hirestextures.hts */
-    if (strstr(filename, "_HIRESTEXTURES.hts") == NULL || 
-    	strstr(filename2, "_HIRESTEXTURES.hts") == NULL)
-    {
-        printf("Error: filename doesn't contain _HIRESTEXTURES.hts!\n");
-        return 1;
-    }
-
     FILE* file = fopen(filename, "rb");
     if (file == NULL)
     {
@@ -359,10 +351,11 @@ int main(int argc, char** argv)
     	return 1;
     }
 
-    // TODO: mismatched format support
-    if (oldFormat != oldFormat2)
+    // TODO: support file 1 being new format and
+    // file 2 being old format
+    if (!oldFormat && oldFormat2)
     {
-    	fprintf(stderr, "Error: format mismatch!\n");
+    	fprintf(stderr, "Error: unsupported format mismatch!\n");
     	fclose(file);
     	fclose(file2);
     	fclose(outputFile);
@@ -388,11 +381,17 @@ int main(int argc, char** argv)
     // write first HTS file to output file
     if (!write_cache(file, outputFile, oldFormat, oldFormat, compression, mapping))
     {
+        fclose(file);
+        fclose(file2);
+        fclose(outputFile);
     	return 1;
     }
     // write second HTS file to output file
     if (!write_cache(file2, outputFile, oldFormat2, oldFormat, compression, mapping))
     {
+        fclose(file);
+        fclose(file2);
+        fclose(outputFile);
     	return 1;
     }
 
