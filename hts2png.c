@@ -39,6 +39,15 @@ typedef struct
     };
 } N64FormatSize;
 
+union StorageOffset
+{
+    struct {
+        int64_t _offset : 48;
+        int64_t _formatsize : 16;
+    };
+    int64_t _data;
+};
+
 struct GHQTexInfo
 {
     uint8_t*      data;
@@ -332,19 +341,19 @@ int main(int argc, char** argv)
     {
         /* write each file to PNG */
         uint64_t checksum = 0;
-        int64_t  offset = 0;
-        uint64_t currentOffset = 0;
+        union StorageOffset offset;
+        int64_t currentOffset = 0;
         struct GHQTexInfo info = {0};
         char filename[PATH_MAX];
 
         FREAD(checksum);
-        FREAD(offset);
+        FREAD(offset._data);
 
         /* store current offset */
         currentOffset = FTELL(file);
 
         /* seek to texture */
-        FSEEK(file, offset, SEEK_SET);
+        FSEEK(file, offset._offset, SEEK_SET);
 
         if (!read_info(file, oldFormat, &info))
         {
