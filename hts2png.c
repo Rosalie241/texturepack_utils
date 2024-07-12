@@ -7,6 +7,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+//#define VERBOSE
 #ifndef _WIN32
 #include <linux/limits.h>
 #endif /* _WIN32 */
@@ -330,6 +331,8 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    printf("-> Processing %s...\n", filename);
+
     FREAD(mappingOffset);
 
     /* seek to mapping */
@@ -363,6 +366,7 @@ int main(int argc, char** argv)
 
         get_filename_from_info(checksum, oldFormat, &info, base_ident, filename);
 
+#ifdef VERBOSE
         if (oldFormat)
         {
             printf("-> [%i/%i] writing %s\n"
@@ -399,6 +403,7 @@ int main(int argc, char** argv)
                     info.is_hires_tex,
                     info.n64_format_size._formatsize);
         }
+#endif // VERBOSE
 
         if (!write_info_to_png(filename, &info))
         {
