@@ -7,6 +7,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+//#define VERBOSE
 #ifndef _WIN32
 #include <linux/limits.h>
 #endif /* _WIN32 */
@@ -221,6 +222,7 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
             continue;
         }
 
+#ifdef VERBOSE
         if (readOldFormat)
         {
             printf("-> [%i/%i]\n"
@@ -257,6 +259,7 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
                     info.is_hires_tex,
                     info.n64_format_size._formatsize);
         }
+#endif // VERBOSE
 
         std::unordered_multimap<uint64_t, StorageOffset>::iterator mappingIter = mapping.end();
         if (writeOldFormat)
@@ -411,6 +414,7 @@ int main(int argc, char** argv)
     FWRITE(mappingOffset);
 
     // write first HTS file to output file
+    printf("-> Processing %s...\n", filename);
     if (!write_cache(file, outputFile, oldFormat, oldFormat, compression, mapping))
     {
         fclose(file);
@@ -419,6 +423,7 @@ int main(int argc, char** argv)
     	return 1;
     }
     // write second HTS file to output file
+    printf("-> Processing %s...\n", filename2);
     if (!write_cache(file2, outputFile, oldFormat2, oldFormat, compression, mapping))
     {
         fclose(file);
@@ -426,6 +431,8 @@ int main(int argc, char** argv)
         fclose(outputFile);
     	return 1;
     }
+
+    printf("-> Writing header and mappings...\n");
 
     mappingOffset = FTELL(outputFile);
     mappingSize = (int)mapping.size();
