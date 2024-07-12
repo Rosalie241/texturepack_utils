@@ -72,7 +72,7 @@ struct GHQTexInfo
 #define FTELL(x) ftell(x)
 #endif
 
-static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info)
+static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info, bool readData = true)
 {
     FREAD(info->width);
     FREAD(info->height);
@@ -85,6 +85,12 @@ static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info)
         FREAD(info->n64_format_size._formatsize);
     }
     FREAD(info->dataSize);
+
+    /* skip reading data when requested */
+    if (!readData)
+    {
+        return true;
+    }
 
     info->data = (uint8_t*)malloc(info->dataSize);
     if (info->data == NULL)
@@ -121,7 +127,7 @@ static bool write_info(FILE* file, bool oldFormat, bool compression, struct GHQT
     if (compress)
     {
     	void* dest     = NULL;
-    	uLongf destLen = info->dataSize * 2;
+    	uLongf destLen = info->dataSize;
     	dest = malloc(destLen);
 
     	if (compress2((unsigned char*)dest, &destLen, info->data, info->dataSize, 1) != Z_OK)
@@ -176,7 +182,8 @@ static bool check_header(FILE* file, bool* oldFormat, bool* compressed)
     return true;
 }
 
-static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool writeOldFormat, bool compression, std::unordered_map<uint64_t, StorageOffset>& mapping)
+static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool writeOldFormat, bool compression,
+                        std::unordered_multimap<uint64_t, StorageOffset>& mapping)
 {
 	int64_t mappingOffset = -1;
     int32_t mappingSize   = -1;
@@ -194,7 +201,9 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
         uint64_t checksum = 0;
         union StorageOffset offset = {0};
         int64_t currentOffset = 0;
+        int64_t outputFileCurrentOffset = 0;
         struct GHQTexInfo info = {0};
+        struct GHQTexInfo info2 = {0};
         char filename[PATH_MAX];
 
         FREAD(checksum);
@@ -249,23 +258,73 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
                     info.n64_format_size._formatsize);
         }
 
-        /* add to mapping list with correct offset */
+        std::unordered_multimap<uint64_t, StorageOffset>::iterator mappingIter = mapping.end();
         if (writeOldFormat)
         {
-        	offset._data = FTELL(outputFile);
+            mappingIter = mapping.find(checksum);
         }
         else
         {
-        	offset._offset = FTELL(outputFile);
-    	}
-        mapping[checksum] = offset;
-
-        if (!write_info(outputFile, writeOldFormat, compression, &info))
-        {
-        	printf("write_info failed!\n");
+            /* find match with format size included */
+            auto range = mapping.equal_range(checksum);
+            for (auto rangeIter = range.first; rangeIter != range.second; rangeIter++)
+            {
+                if (rangeIter->second._formatsize == offset._formatsize)
+                {
+                    mappingIter = rangeIter;
+                    break;
+                }
+            }
         }
 
-        free(info.data);
+        /* try and see if we can replace
+         * the existing texture */
+        bool replaceTexture = false;
+        if (mappingIter != mapping.end())
+        {
+            outputFileCurrentOffset = FTELL(outputFile);
+            FSEEK(outputFile, mappingIter->second._offset, SEEK_SET);
+            if (read_info(outputFile, writeOldFormat, &info2, false) &&
+                /* does the texture fit? 
+                 * TODO: check compressed size */
+                info2.dataSize <= info.dataSize)
+            {
+                replaceTexture = true;
+                /* set offset to the texture */
+                FSEEK(outputFile, mappingIter->second._offset, SEEK_SET);
+            }
+            else
+            {
+                /* restore offset because the texture doesn't fit */
+                FSEEK(outputFile, outputFileCurrentOffset, SEEK_SET);
+            }
+        }
+
+        /* update offset in mapping */
+        offset._offset = FTELL(outputFile);
+        if (mappingIter != mapping.end())
+        {
+            mappingIter->second = offset;
+        }
+        else
+        {
+            mapping.insert({checksum, offset});
+        }
+
+        write_info(outputFile, writeOldFormat, compression, &info);
+
+        /* restore offset when we've replaced
+         * a texture */
+        if (replaceTexture)
+        {
+            FSEEK(outputFile, outputFileCurrentOffset, SEEK_SET);
+        }
+
+        /* free texture data */
+        if (info.data != NULL)
+        {
+            free(info.data);
+        }
 
         /* restore offset */
         FSEEK(file, currentOffset, SEEK_SET);
@@ -306,14 +365,14 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::unordered_map<uint64_t, StorageOffset> mapping;
+    std::unordered_multimap<uint64_t, StorageOffset> mapping;
 
     /* read file header & mapping */
     bool oldFormat   = false;
     bool oldFormat2  = false;
     bool compression = false;
     
-    FILE* outputFile = fopen(outputFilename, "wb+");
+    FILE* outputFile = fopen(outputFilename, "wb");
 
     if (!check_header(file, &oldFormat, &compression) ||
     	!check_header(file2, &oldFormat2, NULL))
