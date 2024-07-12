@@ -93,46 +93,19 @@ static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info)
     }
 
     fread(info->data, info->dataSize, 1, file);
-
-    if (info->format & GL_TEXFMT_GZ)
-    {
-        void* dest     = NULL;
-        uLongf destLen = info->dataSize * 2;
-        int ret        = 0;
-        do
-        {
-            dest = malloc(destLen);
-            if (dest == NULL)
-            {
-                return false;
-            }
-
-            ret = uncompress((unsigned char*)dest, &destLen, info->data, info->dataSize);
-            if (ret == Z_BUF_ERROR)
-            { /* increase buffer size as needed */
-                free(dest);
-                destLen = destLen + destLen;
-            }
-            else if (ret != Z_OK)
-            {
-                return false;
-            }
-        } while (ret == Z_BUF_ERROR);
-
-        free(info->data);
-        info->data     = (uint8_t*)dest;
-        info->dataSize = destLen;
-    }
-
     return true;
 }
 
 static bool write_info(FILE* file, bool oldFormat, bool compression, struct GHQTexInfo* info)
 {
-	if (compression)
-	{
-		info->format |= GL_TEXFMT_GZ;
-	}
+    bool compress = false;
+
+    if (compression && 
+        (info->format & GL_TEXFMT_GZ) == 0)
+    {
+        compress = true;
+        info->format |= GL_TEXFMT_GZ;
+    }
 
 	FWRITE(info->width);
     FWRITE(info->height);
@@ -145,7 +118,7 @@ static bool write_info(FILE* file, bool oldFormat, bool compression, struct GHQT
         FWRITE(info->n64_format_size._formatsize);
     }
 
-    if (compression)
+    if (compress)
     {
     	void* dest     = NULL;
     	uLongf destLen = info->dataSize * 2;
