@@ -73,6 +73,56 @@ struct GHQTexInfo
 #define FTELL(x) ftell(x)
 #endif
 
+static bool compress_texture(struct GHQTexInfo* info)
+{
+    void* dest     = NULL;
+    uLongf destLen = info->dataSize;
+    dest = malloc(destLen);
+
+    if (compress2((unsigned char*)dest, &destLen, info->data, info->dataSize, 1) != Z_OK)
+    {
+        free(dest);
+        return false;
+    }
+
+    free(info->data);
+    info->dataSize = destLen;
+    info->data     = (uint8_t*)dest;
+    info->format  |= GL_TEXFMT_GZ;
+    return true;
+}
+
+static bool decompress_texture(struct GHQTexInfo* info)
+{
+    void* dest     = NULL;
+    uLongf destLen = info->dataSize * 2;
+    int ret        = 0;
+    do
+    {
+        dest = realloc(dest, destLen);
+        if (dest == NULL)
+        {
+            return false;
+        }
+
+        ret = uncompress((unsigned char*)dest, &destLen, info->data, info->dataSize);
+        if (ret == Z_BUF_ERROR)
+        { /* increase buffer size as needed */
+            destLen = destLen + destLen;
+        }
+        else if (ret != Z_OK)
+        {
+            return false;
+        }
+    } while (ret == Z_BUF_ERROR);
+
+    free(info->data);
+    info->data     = (uint8_t*)dest;
+    info->dataSize = destLen;
+    info->format  &= ~GL_TEXFMT_GZ;
+    return true;
+}
+
 static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info, bool readData = true)
 {
     FREAD(info->width);
@@ -87,31 +137,36 @@ static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info, bool 
     }
     FREAD(info->dataSize);
 
-    /* skip reading data when requested */
-    if (!readData)
+    if (readData)
     {
-        return true;
-    }
+        info->data = (uint8_t*)malloc(info->dataSize);
+        if (info->data == NULL)
+        {
+            return false;
+        }
 
-    info->data = (uint8_t*)malloc(info->dataSize);
-    if (info->data == NULL)
-    {
-        return false;
+        fread(info->data, info->dataSize, 1, file);
     }
-
-    fread(info->data, info->dataSize, 1, file);
     return true;
 }
 
 static bool write_info(FILE* file, bool oldFormat, bool compression, struct GHQTexInfo* info)
 {
     bool compress = false;
+    bool decompress = false;
 
+    /* we have to change the format early */
     if (compression && 
         (info->format & GL_TEXFMT_GZ) == 0)
     {
         compress = true;
         info->format |= GL_TEXFMT_GZ;
+    }
+    else if (!compression && 
+             info->format & GL_TEXFMT_GZ)
+    {
+        decompress = true;
+        info->format &= ~GL_TEXFMT_GZ;
     }
 
 	FWRITE(info->width);
@@ -125,26 +180,49 @@ static bool write_info(FILE* file, bool oldFormat, bool compression, struct GHQT
         FWRITE(info->n64_format_size._formatsize);
     }
 
+    /* compress/decompress data when required */
     if (compress)
     {
-    	void* dest     = NULL;
-    	uLongf destLen = info->dataSize;
-    	dest = malloc(destLen);
-
-    	if (compress2((unsigned char*)dest, &destLen, info->data, info->dataSize, 1) != Z_OK)
-    	{
-    		free(dest);
-    		return false;
-    	}
-
-    	free(info->data);
-    	info->dataSize = destLen;
-    	info->data     = (uint8_t*)dest;
+    	if (!compress_texture(info))
+        {
+            return false;
+        }
+    }
+    else if (decompress)
+    {
+        if (!decompress_texture(info))
+        {
+            return false;
+        }
     }
 
     FWRITE(info->dataSize);
     fwrite(info->data, info->dataSize, 1, file);
 	return true;
+}
+
+static bool check_size(struct GHQTexInfo* info, size_t size, bool compression)
+{
+    /* compress/decompress data when required */
+    if (compression && 
+        (info->format & GL_TEXFMT_GZ) == 0)
+    {
+        if (!compress_texture(info))
+        {
+            return false;
+        }
+    }
+    else if (!compression && 
+             info->format & GL_TEXFMT_GZ)
+    {
+        if (!decompress_texture(info))
+        {
+            return false;
+        }
+    }
+
+    /* does it fit? */
+    return info->dataSize <= size;
 }
 
 static bool check_header(FILE* file, bool* oldFormat, bool* compressed)
@@ -288,9 +366,8 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
             outputFileCurrentOffset = FTELL(outputFile);
             FSEEK(outputFile, mappingIter->second._offset, SEEK_SET);
             if (read_info(outputFile, writeOldFormat, &info2, false) &&
-                /* does the texture fit? 
-                 * TODO: check compressed size */
-                info2.dataSize <= info.dataSize)
+                /* does the texture fit? */
+                check_size(&info, info2.dataSize, compression))
             {
                 replaceTexture = true;
                 /* set offset to the texture */
