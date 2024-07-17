@@ -73,6 +73,36 @@ struct GHQTexInfo
 #define FTELL(x) ftell(x)
 #endif
 
+static void** buffers = nullptr;
+static int    buffers_count = 0;
+static int*   buffers_size = nullptr;
+
+static void* get_buffer(uint8_t number, size_t size)
+{
+    /* allocate required buffers */
+    if (buffers_count < (number + 1))
+    {
+        printf("creating buffer %i\n", number);
+        buffers       = (void**)realloc((void*)buffers, (number + 1) * sizeof(void*));
+        buffers_size  = (int*)realloc((void*)buffers_size, (number + 1) * sizeof(int));
+        buffers_count = (number + 1);
+        /* set initial state */
+        buffers[number]      = nullptr;
+        buffers_size[number] = 0;
+    }
+
+    /* allocate memory for buffer if needed */
+    if (buffers_size[number] < size)
+    {
+        printf("allocating %lu for buffer %i\n", size, number);
+        buffers[number]      = realloc(buffers[number], size);
+        buffers_size[number] = size;
+    }
+
+    /* return usable buffer */
+    return buffers[number];
+}
+
 static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info, bool readData = true)
 {
     FREAD(info->width);
@@ -93,7 +123,7 @@ static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info, bool 
         return true;
     }
 
-    info->data = (uint8_t*)malloc(info->dataSize);
+    info->data = (uint8_t*)get_buffer(0, (info->dataSize));
     if (info->data == NULL)
     {
         return false;
@@ -129,15 +159,15 @@ static bool write_info(FILE* file, bool oldFormat, bool compression, struct GHQT
     {
     	void* dest     = NULL;
     	uLongf destLen = info->dataSize;
-    	dest = malloc(destLen);
+    	dest = get_buffer(1, destLen);
 
     	if (compress2((unsigned char*)dest, &destLen, info->data, info->dataSize, 1) != Z_OK)
     	{
-    		free(dest);
+    		//free(dest);
     		return false;
     	}
 
-    	free(info->data);
+    	//free(info->data);
     	info->dataSize = destLen;
     	info->data     = (uint8_t*)dest;
     }
@@ -326,7 +356,7 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
         /* free texture data */
         if (info.data != NULL)
         {
-            free(info.data);
+            //free(info.data);
         }
 
         /* restore offset */
