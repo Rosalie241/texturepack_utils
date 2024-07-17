@@ -375,7 +375,7 @@ int main(int argc, char** argv)
     bool oldFormat2  = false;
     bool compression = false;
     
-    FILE* outputFile = fopen(outputFilename, "wb");
+    FILE* outputFile = fopen(outputFilename, "wb+");
 
     if (!check_header(file, &oldFormat, &compression) ||
     	!check_header(file2, &oldFormat2, NULL))
