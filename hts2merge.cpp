@@ -82,19 +82,24 @@ static void* get_buffer(uint8_t number, size_t size)
     /* allocate required buffers */
     if (buffers_count < (number + 1))
     {
-        printf("creating buffer %i\n", number);
+        printf("get_buffer: creating buffer %i with size %lu\n", number, size);
         buffers       = (void**)realloc((void*)buffers, (number + 1) * sizeof(void*));
         buffers_size  = (int*)realloc((void*)buffers_size, (number + 1) * sizeof(int));
+        /* set initial state for buffers */
+        for (size_t i = buffers_count; i < (number + 1); i++)
+        {
+            printf("setting state for buffer %i\n", i);
+            buffers[number]      = nullptr;
+            buffers_size[number] = 0;
+        }
+
         buffers_count = (number + 1);
-        /* set initial state */
-        buffers[number]      = nullptr;
-        buffers_size[number] = 0;
     }
 
     /* allocate memory for buffer if needed */
     if (buffers_size[number] < size)
     {
-        printf("allocating %lu for buffer %i\n", size, number);
+        printf("get_buffer: allocating %lu for buffer %i\n", size, number);
         buffers[number]      = realloc(buffers[number], size);
         buffers_size[number] = size;
     }
@@ -103,7 +108,21 @@ static void* get_buffer(uint8_t number, size_t size)
     return buffers[number];
 }
 
-static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info, bool readData = true)
+static void free_buffers(void)
+{
+    for (int i = 0; i < buffers_count; i++)
+    {
+        free(buffers[i]);
+    }
+
+    free(buffers_size);
+    free(buffers);
+    buffers       = nullptr;
+    buffers_size  = nullptr;
+    buffers_count = 0;
+}
+
+static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info, uint8_t buffer_number)
 {
     FREAD(info->width);
     FREAD(info->height);
@@ -117,15 +136,10 @@ static bool read_info(FILE* file, bool oldFormat, struct GHQTexInfo* info, bool 
     }
     FREAD(info->dataSize);
 
-    /* skip reading data when requested */
-    if (!readData)
-    {
-        return true;
-    }
-
-    info->data = (uint8_t*)get_buffer(0, (info->dataSize));
+    info->data = (uint8_t*)get_buffer(buffer_number, info->dataSize);
     if (info->data == NULL)
     {
+        printf("get_buffer with size %lu failed!\n", info->dataSize);
         return false;
     }
 
@@ -159,15 +173,13 @@ static bool write_info(FILE* file, bool oldFormat, bool compression, struct GHQT
     {
     	void* dest     = NULL;
     	uLongf destLen = info->dataSize;
-    	dest = get_buffer(1, destLen);
+    	dest = get_buffer(2, destLen);
 
     	if (compress2((unsigned char*)dest, &destLen, info->data, info->dataSize, 1) != Z_OK)
     	{
-    		//free(dest);
     		return false;
     	}
 
-    	//free(info->data);
     	info->dataSize = destLen;
     	info->data     = (uint8_t*)dest;
     }
@@ -175,6 +187,26 @@ static bool write_info(FILE* file, bool oldFormat, bool compression, struct GHQT
     FWRITE(info->dataSize);
     fwrite(info->data, info->dataSize, 1, file);
 	return true;
+}
+
+static bool check_size(struct GHQTexInfo* info, size_t size, bool compression)
+{
+    /* compress data when required */
+    if (compression && 
+        (info->format & GL_TEXFMT_GZ) == 0)
+    {
+        uLongf destLen = info->dataSize;
+        void*  dest    = get_buffer(3, destLen);
+
+        if (compress2((unsigned char*)dest, &destLen, info->data, info->dataSize, 1) == Z_OK)
+        {
+            info->dataSize = destLen;
+            info->data     = (uint8_t*)dest;
+            info->format  |= GL_TEXFMT_GZ;
+        }
+    }
+
+    return info->dataSize <= size; 
 }
 
 static bool check_header(FILE* file, bool* oldFormat, bool* compressed)
@@ -246,7 +278,7 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
         /* seek to texture */
         FSEEK(file, offset._offset, SEEK_SET);
 
-        if (!read_info(file, readOldFormat, &info))
+        if (!read_info(file, readOldFormat, &info, 0))
         {
         	fprintf(stderr, "Error: failed to read texture info\n");
             continue;
@@ -317,10 +349,9 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
         {
             outputFileCurrentOffset = FTELL(outputFile);
             FSEEK(outputFile, mappingIter->second._offset, SEEK_SET);
-            if (read_info(outputFile, writeOldFormat, &info2, false) &&
-                /* does the texture fit? 
-                 * TODO: check compressed size */
-                info2.dataSize <= info.dataSize)
+            if (read_info(outputFile, writeOldFormat, &info2, 1) &&
+                /* does the texture fit? */
+                check_size(&info2, info.dataSize, compression))
             {
                 replaceTexture = true;
                 /* set offset to the texture */
@@ -351,12 +382,6 @@ static bool write_cache(FILE* file, FILE* outputFile, bool readOldFormat, bool w
         if (replaceTexture)
         {
             FSEEK(outputFile, outputFileCurrentOffset, SEEK_SET);
-        }
-
-        /* free texture data */
-        if (info.data != NULL)
-        {
-            //free(info.data);
         }
 
         /* restore offset */
@@ -405,7 +430,7 @@ int main(int argc, char** argv)
     bool oldFormat2  = false;
     bool compression = false;
     
-    FILE* outputFile = fopen(outputFilename, "wb");
+    FILE* outputFile = fopen(outputFilename, "wb+");
 
     if (!check_header(file, &oldFormat, &compression) ||
     	!check_header(file2, &oldFormat2, NULL))
