@@ -531,5 +531,7 @@ int main(int argc, char** argv)
 #undef FWRITE
 
     fclose(file);
+    fclose(file2);
+    fclose(outputFile);
     return 0;
 }
